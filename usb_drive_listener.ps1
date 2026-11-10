@@ -37,7 +37,7 @@ try {
 
                     Start-Process -FilePath 'powershell.exe' `
                         -ArgumentList @(
-                            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                            '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
                             $resolvedScriptPath, '-DriveLetter', $driveLetter
                         ) `
                         -WindowStyle Hidden
