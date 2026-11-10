@@ -1,6 +1,7 @@
 # In Windows Task Scheduler:
 #   Program/script: powershell.exe
-#   Arguments: -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "<absolute path>\UsbDriveListener.ps1"
+#   Arguments: -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File
+#              "<absolute path>\UsbDriveListener.ps1"
 
 # Keep the event name and scan-script path together for easy configuration.
 $EventSourceIdentifier = 'volumeChange'
