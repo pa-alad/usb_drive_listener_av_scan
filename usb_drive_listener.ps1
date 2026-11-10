@@ -65,7 +65,8 @@ while ($true) {
             # Start-Process is used here so the "listener" script keeps
             # running in the background while the real action script
             # runs separately.
-            Start-Process powershell.exe -ArgumentList '-NoProfile -File "C:\Scripts\DoSomething.ps1"'
+            # NB. av_scan.ps1 must be in the same directory as this script.
+            Start-Process powershell.exe -ArgumentList "-NoProfile -File `"$PSScriptRoot\av_scan.ps1`" -DriveLetter $driveLetter"
         }
     }
 
