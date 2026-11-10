@@ -1,6 +1,6 @@
 # In Windows Task Scheduler:
 #   Program/script: powershell.exe
-#   Arguments: -NoProfile -ExecutionPolicy Bypass -File "<absolute path>\UsbDriveListener.ps1"
+#   Arguments: -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "<absolute path>\UsbDriveListener.ps1"
 
 # Keep the event name and scan-script path together for easy configuration.
 $EventSourceIdentifier = 'volumeChange'
@@ -10,7 +10,6 @@ $ScanScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'av_scan.ps1'
 try {
     Register-WmiEvent -Class Win32_VolumeChangeEvent `
         -SourceIdentifier $EventSourceIdentifier -ErrorAction Stop | Out-Null
-    Write-Host 'Listening for drive insertion events...'
 
     # Wait for each event and keep listening while this process is running.
     while ($true) {

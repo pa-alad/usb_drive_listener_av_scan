@@ -23,11 +23,12 @@ not verify that the device is USB or removable media.
    desired time, for example, when the user logs on.
 3. Configure the task action:
    - **Program/script:** `powershell.exe`
-   - **Arguments:** `-NoProfile -ExecutionPolicy Bypass -File "C:\Scripts\usb_drive_listener.ps1"`
+   - **Arguments:** `-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File "C:\Scripts\usb_drive_listener.ps1"`
      (replace the path with the actual location)
 4. Configure the task to run in the interactive user session (**Run only when
    user is logged on**) so the scan status dialogs can be displayed.
-5. Start the task and confirm it remains running.
+5. Start the task and confirm it remains running. The PowerShell console stays
+   hidden; do not end the task if you want drive-arrival monitoring to continue.
 
 The listener starts a separate PowerShell process for each volume-arrival
 event. It waits for events rather than polling, and removes handled events from
