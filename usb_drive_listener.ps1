@@ -30,18 +30,25 @@ try {
             if ($type -eq 2) {
                 $driveLetter = $event.SourceEventArgs.NewEvent.DriveName
                 if ($driveLetter) {
-                    # Use a full path and argument array to support script paths with spaces.
+                    # Quote the path because Start-Process joins arguments into one command line.
                     $resolvedScriptPath = [System.IO.Path]::GetFullPath($ScanScriptPath)
                     if (-not (Test-Path -Path $resolvedScriptPath -PathType Leaf)) {
                         throw "Scan script not found: $resolvedScriptPath"
                     }
 
+                    $scanArguments = @(
+                        '-NoProfile'
+                        '-STA'
+                        '-ExecutionPolicy'
+                        'Bypass'
+                        '-File'
+                        ('"{0}"' -f $resolvedScriptPath)
+                        '-DriveLetter'
+                        $driveLetter
+                    )
+
                     Start-Process -FilePath 'powershell.exe' `
-                        -ArgumentList @(
-                            '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
-                            $resolvedScriptPath, '-DriveLetter', $driveLetter
-                        ) `
-                        -WindowStyle Hidden
+                        -ArgumentList $scanArguments
                 }
             }
         } catch {

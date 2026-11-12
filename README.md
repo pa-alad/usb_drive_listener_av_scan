@@ -58,6 +58,9 @@ Keep the drive connected and verify completion in Windows Security.
   `Start-MpScan` is available in that Windows session.
 - The dialogs require an interactive user session. A task running without a
   logged-on user may not be able to display them.
+- After changing either script, stop and restart the listener task so it uses
+  the updated launcher. The listener console stays hidden. The scan process
+  opens a separate PowerShell console while the prompt and scan request run.
 - Errors from a scheduled task may not be visible in a console. Check Task
   Scheduler history and the configured task account and permissions.
 
