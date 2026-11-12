@@ -111,15 +111,16 @@ try {
         exit 0
     }
 
-    # Submit the scan request; this cmdlet does not confirm that scanning has completed.
-    Start-MpScan -ScanType CustomScan -ScanPath $ScanPath -ErrorAction Stop
+    # Run Defender in a job so the notification need not wait for the command to finish.
+    $scanJob = Start-MpScan -ScanType CustomScan -ScanPath $ScanPath `
+        -AsJob -ErrorAction Stop
 
-    # Report that the request was accepted without implying that scanning is complete.
     try {
+        # This reports that the command was queued, not that scanning has completed.
         [void][System.Windows.Forms.MessageBox]::Show(
-            "Windows Defender accepted a scan request for:`r`n`r`n$ScanPath`r`n`r`n" +
-            "This does not confirm the scan status.`r`n" +
-            'Keep the drive connected and verify completion in Windows Security.',
+            "Windows Defender is processing a scan request for:`r`n`r`n$ScanPath`r`n`r`n" +
+            'This does not confirm that scanning has started or finished. Keep the drive ' +
+            'connected and verify completion in Windows Security.',
             'USB Drive Scan',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Information
@@ -130,10 +131,26 @@ try {
             $_.Exception.Message
         )
     }
-    Write-Host "Defender scan request submitted for $ScanPath"
+
+    # Keep this session alive until the job finishes, then check its result.
+    try {
+        Wait-Job -Job $scanJob -ErrorAction Stop | Out-Null
+        if ($scanJob.State -ne 'Completed') {
+            $jobReason = $scanJob.ChildJobs[0].JobStateInfo.Reason
+            if ($null -ne $jobReason) {
+                throw $jobReason
+            }
+            throw "Defender scan command ended with state '$($scanJob.State)'."
+        }
+        Receive-Job -Job $scanJob -ErrorAction Stop | Out-Null
+    } finally {
+        Remove-Job -Job $scanJob -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "Defender scan command completed for $ScanPath"
     exit 0
 } catch {
-    # Report validation errors and failures to submit the scan request without claiming scan state.
+    # Report validation errors and failures to submit or run the scan command.
     Show-ScanError -Message (
         "Failed to submit Windows Defender scan request for ${DriveLetter}: " +
         $_.Exception.Message

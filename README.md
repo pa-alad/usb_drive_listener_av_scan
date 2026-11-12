@@ -43,8 +43,10 @@ its queue. If the listener exits, its WMI event subscription is cleaned up.
 2. For an arrival event with a drive letter, it starts `av_scan.ps1`.
 3. The scan script validates the drive path and asks the user whether to scan.
    The prompt is modal and topmost; dismissing it or closing it does not scan.
-4. If the user selects **Scan**, the script submits a Defender custom scan and
-   reports whether the request was submitted or an error occurred.
+4. If the user selects **Scan**, the script starts the Defender command as a
+   background job and immediately shows a notice while it runs. The notice does
+   not confirm that scanning has started or finished. After it is dismissed,
+   the script waits for the command and reports any errors.
 
 **A successful request is not confirmation that a scan is running or complete.**
 Keep the drive connected and verify completion in Windows Security.
