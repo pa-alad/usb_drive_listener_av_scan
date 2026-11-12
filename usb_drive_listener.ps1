@@ -31,9 +31,9 @@ try {
                 $driveLetter = $event.SourceEventArgs.NewEvent.DriveName
                 if ($driveLetter) {
                     # Quote the path because Start-Process joins arguments into one command line.
-                    $resolvedScriptPath = [System.IO.Path]::GetFullPath($ScanScriptPath)
-                    if (-not (Test-Path -Path $resolvedScriptPath -PathType Leaf)) {
-                        throw "Scan script not found: $resolvedScriptPath"
+                    $resolvedAvScanScriptPath = [System.IO.Path]::GetFullPath($ScanScriptPath)
+                    if (-not (Test-Path -Path $resolvedAvScanScriptPath -PathType Leaf)) {
+                        throw "Scan script not found: $resolvedAvScanScriptPath"
                     }
 
                     $scanArguments = @(
@@ -42,7 +42,7 @@ try {
                         '-ExecutionPolicy'
                         'Bypass'
                         '-File'
-                        ('"{0}"' -f $resolvedScriptPath)
+                        ('"{0}"' -f $resolvedAvScanScriptPath)
                         '-DriveLetter'
                         $driveLetter
                     )

@@ -38,7 +38,6 @@ function Confirm-DriveScan {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'USB Drive Scan'
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-    $form.Size = New-Object System.Drawing.Size(440, 170)
     $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
@@ -48,24 +47,29 @@ function Confirm-DriveScan {
     $message = New-Object System.Windows.Forms.Label
     $message.Text = (
         "A drive was inserted at $Path.`r`n" +
-        'Would you like to scan it with Windows Defender?'
+        "Would you like to scan it with Windows Defender?`r`n`r`n" +
+        'Ensure Defender security intelligence definitions are up to date.'
     )
-    $message.AutoSize = $false
+    $message.AutoSize = $true
+    $message.MaximumSize = New-Object System.Drawing.Size(395, 0)
     $message.Location = New-Object System.Drawing.Point(16, 16)
-    $message.Size = New-Object System.Drawing.Size(395, 55)
     $form.Controls.Add($message)
+
+    # Size the dialog and place the buttons after the wrapped message.
+    $buttonY = $message.Bottom + 18
+    $form.ClientSize = New-Object System.Drawing.Size(440, ($buttonY + 46))
 
     $scanButton = New-Object System.Windows.Forms.Button
     $scanButton.Text = 'Scan'
     $scanButton.DialogResult = [System.Windows.Forms.DialogResult]::Yes
-    $scanButton.Location = New-Object System.Drawing.Point(220, 85)
+    $scanButton.Location = New-Object System.Drawing.Point(220, $buttonY)
     $scanButton.Size = New-Object System.Drawing.Size(90, 30)
     $form.Controls.Add($scanButton)
 
     $dismissButton = New-Object System.Windows.Forms.Button
     $dismissButton.Text = 'Dismiss'
     $dismissButton.DialogResult = [System.Windows.Forms.DialogResult]::No
-    $dismissButton.Location = New-Object System.Drawing.Point(320, 85)
+    $dismissButton.Location = New-Object System.Drawing.Point(320, $buttonY)
     $dismissButton.Size = New-Object System.Drawing.Size(90, 30)
     $form.Controls.Add($dismissButton)
 
@@ -114,8 +118,8 @@ try {
     try {
         [void][System.Windows.Forms.MessageBox]::Show(
             "Windows Defender accepted a scan request for:`r`n`r`n$ScanPath`r`n`r`n" +
-            'This does not confirm scan status. Keep the drive connected and verify completion ' +
-            'in Windows Security.',
+            "This does not confirm the scan status.`r`n" +
+            'Keep the drive connected and verify completion in Windows Security.',
             'USB Drive Scan',
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Information
