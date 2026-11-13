@@ -1,38 +1,31 @@
-# Accept the drive letter from the listener to scan the newly inserted volume.
 param(
-    # Receive the drive letter from the parent script.
-    # Example: E:
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$DriveLetter
 )
 
-# Report errors to the console and, when possible, in a dialog box.
-function Show-ScanError {
+function Get-DriveScanPath {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Message
+        [string]$Letter
     )
 
-    Write-Error $Message
-
-    try {
-        [void][System.Windows.Forms.MessageBox]::Show(
-            $Message,
-            'USB Drive Scan',
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        )
-    } catch {
-        # Ignore UI errors; the console error message is enough for unattended execution.
+    if ($Letter -notmatch '^[A-Za-z]:$') {
+        throw "Drive letter '$Letter' is invalid. Expected a format like E:."
     }
+
+    $scanPath = $Letter.TrimEnd('\') + '\'
+    if (-not (Test-Path -Path $scanPath -PathType Container)) {
+        throw "Scan path does not exist: $scanPath"
+    }
+
+    return $scanPath
 }
 
-# Ask for consent in a topmost modal form so the choice is visible above other windows.
-function Confirm-DriveScan {
+function Confirm-DriveScanUsingPrompt {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$ScanPath
     )
 
     $form = New-Object System.Windows.Forms.Form
@@ -46,7 +39,7 @@ function Confirm-DriveScan {
 
     $message = New-Object System.Windows.Forms.Label
     $message.Text = (
-        "A drive was inserted at $Path.`r`n" +
+        "A drive was inserted at $ScanPath.`r`n" +
         "Would you like to scan it with Windows Defender?`r`n`r`n" +
         'Ensure Defender security intelligence definitions are up to date.'
     )
@@ -55,7 +48,6 @@ function Confirm-DriveScan {
     $message.Location = New-Object System.Drawing.Point(16, 16)
     $form.Controls.Add($message)
 
-    # Size the dialog and place the buttons after the wrapped message.
     $buttonY = $message.Bottom + 18
     $form.ClientSize = New-Object System.Drawing.Size(440, ($buttonY + 46))
 
@@ -86,45 +78,67 @@ function Confirm-DriveScan {
     }
 }
 
-# Validate the drive and target path before asking Defender to scan.
-try {
-    if ($DriveLetter -notmatch '^[A-Za-z]:$') {
-        throw "Drive letter '$DriveLetter' is not valid. Expected a format like E:."
+function Show-ScanRequestNotice {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScanPath
+    )
+
+    [void][System.Windows.Forms.MessageBox]::Show(
+        "Windows Defender is processing a scan request for:`r`n`r`n$ScanPath`r`n`r`n" +
+        'This does not confirm that scanning has started or finished. Keep the drive ' +
+        'connected and verify completion in Windows Security.',
+        'USB Drive Scan',
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Information
+    )
+}
+
+function Wait-ForDefenderScanJob {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.Job]$Job
+    )
+
+    try {
+        Wait-Job -Job $Job -ErrorAction Stop | Out-Null
+        if ($Job.State -ne 'Completed') {
+            $jobReason = $Job.ChildJobs[0].JobStateInfo.Reason
+            if ($null -ne $jobReason) {
+                throw $jobReason
+            }
+
+            throw "Defender scan command ended with state '$($Job.State)'."
+        }
+
+        Receive-Job -Job $Job -ErrorAction Stop | Out-Null
+    } finally {
+        Remove-Job -Job $Job -Force -ErrorAction SilentlyContinue
     }
+}
 
-    $ScanPath = $DriveLetter.TrimEnd('\') + '\'
+function Invoke-DriveScan {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Letter
+    )
 
-    if (-not (Test-Path -Path $ScanPath -PathType Container)) {
-        throw "Scan path does not exist: $ScanPath"
-    }
-
+    $scanPath = Get-DriveScanPath -Letter $Letter
     if (-not (Get-Command -Name Start-MpScan -ErrorAction SilentlyContinue)) {
         throw 'Windows Defender is not available on this system.'
     }
 
-    # Load the WinForms assembly only when we need the user-facing dialog box.
     Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-
-    # Do not submit a scan request unless the user explicitly chooses Scan.
-    if (-not (Confirm-DriveScan -Path $ScanPath)) {
-        Write-Host "Scan dismissed for $ScanPath"
-        exit 0
+    if (-not (Confirm-DriveScanUsingPrompt -ScanPath $scanPath)) {
+        Write-Host "Scan dismissed for $scanPath"
+        return
     }
 
-    # Run Defender in a job so the notification need not wait for the command to finish.
-    $scanJob = Start-MpScan -ScanType CustomScan -ScanPath $ScanPath `
+    $scanJob = Start-MpScan -ScanType CustomScan -ScanPath $scanPath `
         -AsJob -ErrorAction Stop
 
     try {
-        # This reports that the command was queued, not that scanning has completed.
-        [void][System.Windows.Forms.MessageBox]::Show(
-            "Windows Defender is processing a scan request for:`r`n`r`n$ScanPath`r`n`r`n" +
-            'This does not confirm that scanning has started or finished. Keep the drive ' +
-            'connected and verify completion in Windows Security.',
-            'USB Drive Scan',
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Information
-        )
+        Show-ScanRequestNotice -ScanPath $scanPath
     } catch {
         Write-Warning (
             'Scan request was submitted, but the confirmation dialog could not be displayed: ' +
@@ -132,27 +146,35 @@ try {
         )
     }
 
-    # Keep this session alive until the job finishes, then check its result.
-    try {
-        Wait-Job -Job $scanJob -ErrorAction Stop | Out-Null
-        if ($scanJob.State -ne 'Completed') {
-            $jobReason = $scanJob.ChildJobs[0].JobStateInfo.Reason
-            if ($null -ne $jobReason) {
-                throw $jobReason
-            }
-            throw "Defender scan command ended with state '$($scanJob.State)'."
-        }
-        Receive-Job -Job $scanJob -ErrorAction Stop | Out-Null
-    } finally {
-        Remove-Job -Job $scanJob -Force -ErrorAction SilentlyContinue
-    }
+    Wait-ForDefenderScanJob -Job $scanJob
+    Write-Host "Defender scan command completed for $scanPath"
+}
 
-    Write-Host "Defender scan command completed for $ScanPath"
-    exit 0
+function Show-ScanError {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Error $Message
+    try {
+        [void][System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            'USB Drive Scan',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    } catch {
+        Write-Warning "Could not display the error dialog: $($_.Exception.Message)"
+    }
+}
+
+
+try {
+    Invoke-DriveScan -Letter $DriveLetter
 } catch {
-    # Report validation errors and failures to submit or run the scan command.
     Show-ScanError -Message (
-        "Failed to submit Windows Defender scan request for ${DriveLetter}: " +
+        "Failed to process Defender scan for ${DriveLetter}: " +
         $_.Exception.Message
     )
     exit 1

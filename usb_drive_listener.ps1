@@ -1,74 +1,84 @@
-# In Windows Task Scheduler:
+# Listens for USB drive insertions and runs av_scan.ps1 on that event.
+#
+# To be run by Windows Task Scheduler at user login:
 #   Program/script: powershell.exe
-#   Arguments: -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File
-#              "<absolute path>\UsbDriveListener.ps1"
+#   Arguments: -WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass
+#              -File "<absolute path>\usb_drive_listener.ps1"
 
-# Keep the event name and scan-script path together for easy configuration.
+function Start-AvScanProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DriveLetter
+    )
+
+    try {
+        $avScanScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'av_scan.ps1'
+        $resolvedAvScanScriptPath = [System.IO.Path]::GetFullPath($avScanScriptPath)
+        if (-not (Test-Path -Path $resolvedAvScanScriptPath -PathType Leaf)) {
+            throw "AV scan script not found: $resolvedAvScanScriptPath"
+        }
+
+        $processArguments = @(
+            '-NoProfile'
+            '-STA'
+            '-ExecutionPolicy'
+            'Bypass'
+            '-File'
+            ('"{0}"' -f $resolvedAvScanScriptPath)
+            '-DriveLetter'
+            $DriveLetter
+        )
+
+        Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList $processArguments -ErrorAction Stop
+    } catch {
+        Write-Warning (
+            "Failed to launch the scan script for drive '$DriveLetter': " +
+            $_.Exception.Message
+        )
+    }
+}
+
+function Get-InsertedDriveName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.PSEventArgs]$VolumeEvent
+    )
+
+    $volumeChange = $VolumeEvent.SourceEventArgs.NewEvent
+    # NB. EventType 2 for drive arrivals
+    if ($volumeChange.EventType -ne 2 -or -not $volumeChange.DriveName) {
+        return
+    }
+
+    return $volumeChange.DriveName
+}
+
+
 $EventSourceIdentifier = 'volumeChange'
-$ScanScriptPath = Join-Path -Path $PSScriptRoot -ChildPath 'av_scan.ps1'
 
-# Register the WMI volume-change event once and keep the listener alive indefinitely.
 try {
     Register-WmiEvent -Class Win32_VolumeChangeEvent `
         -SourceIdentifier $EventSourceIdentifier -ErrorAction Stop | Out-Null
 
-    # Wait for each event and keep listening while this process is running.
     while ($true) {
+        # NB. Blocks waiting for an event
+        $volumeEvent = Wait-Event -SourceIdentifier $EventSourceIdentifier -ErrorAction Stop
+
         try {
-            $event = Wait-Event -SourceIdentifier $EventSourceIdentifier -ErrorAction Stop
-        } catch {
-            if ($_.FullyQualifiedErrorId -eq 'NoEventsFound') {
-                continue
+            $driveLetter = Get-InsertedDriveName -VolumeEvent $volumeEvent
+            if ($driveLetter) {
+                Start-AvScanProcess -DriveLetter $driveLetter
             }
-            throw
-        }
-
-        # EventType 2 means volume arrival; ignore removals and other changes.
-        $driveLetter = $null
-        try {
-            $type = $event.SourceEventArgs.NewEvent.EventType
-            if ($type -eq 2) {
-                $driveLetter = $event.SourceEventArgs.NewEvent.DriveName
-                if ($driveLetter) {
-                    # Quote the path because Start-Process joins arguments into one command line.
-                    $resolvedAvScanScriptPath = [System.IO.Path]::GetFullPath($ScanScriptPath)
-                    if (-not (Test-Path -Path $resolvedAvScanScriptPath -PathType Leaf)) {
-                        throw "Scan script not found: $resolvedAvScanScriptPath"
-                    }
-
-                    $scanArguments = @(
-                        '-NoProfile'
-                        '-STA'
-                        '-ExecutionPolicy'
-                        'Bypass'
-                        '-File'
-                        ('"{0}"' -f $resolvedAvScanScriptPath)
-                        '-DriveLetter'
-                        $driveLetter
-                    )
-
-                    Start-Process -FilePath 'powershell.exe' `
-                        -ArgumentList $scanArguments
-                }
-            }
-        } catch {
-            Write-Warning (
-                "Failed to process volume event for drive '$driveLetter': " +
-                $_.Exception.Message
-            )
         } finally {
-            # Remove handled events to prevent the event queue from growing.
-            if ($null -ne $event) {
-                Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction SilentlyContinue
-            }
+            Remove-Event -EventIdentifier $volumeEvent.EventIdentifier `
+                -ErrorAction SilentlyContinue
         }
     }
 } catch {
-    # Report startup or listener failures instead of continuing without event handling.
-    Write-Error "Failed to register or process drive change events: $($_.Exception.Message)"
+    Write-Error "Drive listener stopped unexpectedly: $($_.Exception.Message)"
     exit 1
 } finally {
-    # Clean up the subscription whenever the listener exits.
     Unregister-Event -SourceIdentifier $EventSourceIdentifier -ErrorAction SilentlyContinue
     Remove-Event -SourceIdentifier $EventSourceIdentifier -ErrorAction SilentlyContinue
 }
